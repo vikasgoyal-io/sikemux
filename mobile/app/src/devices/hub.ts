@@ -2,7 +2,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { CoreEvent, MobileError, type ConnectionLike, type CoreListener } from '@sikemux/native';
 
-import { channelName, type Snapshot } from '@/core/protocol';
+import { keepUnchanged, readHost, readView, type Snapshot } from '@/core/protocol';
 import { goOffline, thisDevice } from '@/device/identity';
 import { onNetworkChange } from '@/network/connectivity';
 import { dismissHostCards, reconcileCards } from '@/notify/cards';
@@ -167,17 +167,21 @@ function scheduleRetry(core: string, found: Entry) {
   found.retrying = setTimeout(() => open(core), wait * (0.8 + Math.random() * 0.4));
 }
 
-function release(found: Entry) {
+function release(core: string, found: Entry) {
   stopTimers(found);
   found.current = undefined;
-  if (found.live.status === 'open') found.live.connection.close();
+  if (found.live.status === 'open') {
+    found.live.connection.close();
+    // "Seen 5m ago" means when the phone last had the host, which is when a live connection ends.
+    if (!forgotten.has(core)) updateDevice(core, { lastSeen: Date.now() }).then(reloadDevices, () => {});
+  }
   if (found.openedAt !== undefined && Date.now() - found.openedAt >= STEADY_MS) found.attempt = 0;
   found.openedAt = undefined;
 }
 
 function drop(core: string, reason: string, error?: unknown) {
   const found = entry(core);
-  release(found);
+  release(core, found);
   const unpaired = MobileError.Unpaired.instanceOf(error);
   const outdatedBy = outdated(error);
   found.failure = reason;
@@ -195,15 +199,16 @@ function drop(core: string, reason: string, error?: unknown) {
 
 function listener(core: string, found: Entry, attempt: object): CoreListener {
   const current = () => found.current === attempt && entries.get(core) === found;
+  let fresh = true;
   return {
     events(events) {
       if (!current()) return;
       const chats: ChatDelivery[] = [];
-      let view: Snapshot | undefined;
+      let viewJson: string | undefined;
       for (const event of events) {
         if (CoreEvent.Chat.instanceOf(event)) chats.push(event.inner);
         // Each view is whole, so of several in one batch only the last matters.
-        else if (CoreEvent.View.instanceOf(event)) view = event.inner.view;
+        else if (CoreEvent.View.instanceOf(event)) viewJson = event.inner.viewJson;
       }
       if (chats.length) {
         found.chats.forEach((listen) => {
@@ -214,10 +219,12 @@ function listener(core: string, found: Entry, attempt: object): CoreListener {
           }
         });
       }
-      if (!view) return;
+      if (viewJson === undefined) return;
+      const view = keepUnchanged(found.live.snapshot, readView(viewJson));
       // The host sends its view as soon as it lets the phone in, which can be before `connect` answers.
       set(core, found, { ...found.live, snapshot: view });
-      reconcileCards(core, view);
+      reconcileCards(core, view, fresh);
+      fresh = false;
     },
     closed() {
       if (!current() || found.live.status !== 'open') return;
@@ -265,13 +272,17 @@ async function connect(core: string, found: Entry) {
   shareKey(core, connection).then(() => withdrawIfForgotten(core));
   connection
     .host()
-    .then((host) => updateDevice(core, { name: host.name, model: host.model, channel: channelName(host.channel), lastSeen: Date.now() }))
-    .then(reloadDevices)
+    .then(readHost)
+    .then((host) => {
+      const known = devices.find((device) => device.core === core);
+      if (known?.name === host.name && known.model === host.model && known.channel === host.channel) return;
+      return updateDevice(core, { name: host.name, model: host.model, channel: host.channel }).then(reloadDevices);
+    })
     .catch(() => {});
 }
 
 function close(core: string, found: Entry, reason: string) {
-  release(found);
+  release(core, found);
   found.failure = undefined;
   found.recovering = false;
   set(core, found, { status: 'closed', problem: reason, snapshot: found.live.snapshot });
@@ -419,15 +430,18 @@ function useHost<T>(core: string, read: () => T): T {
   return useSyncExternalStore((listener) => subscribeHost(core, listener), read);
 }
 
-/** One device's live state; the device stays connected while this is mounted. Only that host's changes re-render. */
-export function useLive(core: string): Live {
-  useEffect(() => watch(core), [core]);
+/**
+ * One device's live state; the device stays connected while this is mounted and `watching`. Only that host's
+ * changes re-render.
+ */
+export function useLive(core: string, watching = true): Live {
+  useEffect(() => (watching ? watch(core) : undefined), [core, watching]);
   return useHost(core, () => liveOf(core));
 }
 
-/** How a host is doing, worded as the screens show it; the device stays connected while this is mounted. */
-export function useHostStatus(core: string): HostStatus {
-  const live = useLive(core);
+/** How a host is doing, worded as the screens show it; the device stays connected while this is mounted and `watching`. */
+export function useHostStatus(core: string, watching = true): HostStatus {
+  const live = useLive(core, watching);
   const device = useSyncExternalStore(subscribe, () => devices.find((known) => known.core === core));
   return useMemo(() => hostStatus(live, device), [live, device]);
 }
@@ -447,7 +461,7 @@ export async function forget(core: string) {
   await Promise.race([goodbye, new Promise((settle) => setTimeout(settle, UNPAIR_WAIT_MS))]);
   dismissHostCards(core);
   if (found) {
-    release(found);
+    release(core, found);
     found.live = FORGOTTEN;
   }
   entries.delete(core);

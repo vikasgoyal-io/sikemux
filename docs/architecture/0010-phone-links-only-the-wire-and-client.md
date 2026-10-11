@@ -29,6 +29,13 @@ phone never runs.
   `sikemux-wire`.
 - **Neither crate joins `workspace-hack`.** hakari leaves them out, so the desktop app's
   dependencies never reach the phone's lockfile entries.
+- **A request the phone makes is a method of the core, called by name.** The wire format
+  has one `Call { method, params }` request answered with JSON. The methods live in the
+  core's server (`sikemux-core/src/server/calls.rs`) and the phone's TypeScript calls them
+  through the bridge's `call` and `call_to_file`, so a new request reaches phones over the
+  air. A method a released app calls is never removed or renamed, as the accounts API's
+  `/v1` only grows. `call_to_file` writes a file in the answer to disk from Rust, so large
+  answers never cross into JavaScript.
 - **The phone's Rust is transport.** What changes with features, such as how a chat reads
   or how long a turn took, lives in TypeScript the phone shares with the Mac, and reaches
   the phone over the air.
@@ -38,9 +45,15 @@ phone never runs.
 - Changes to the core's server, its chat drivers, the harness, the terminal engine and the
   desktop's dependencies no longer change the phone's native code. Only a change to the
   wire format, the client, `sikemux-mobile` or a dependency they share needs a store build.
-- A field the core adds inside JSON the phone already passes through, such as a chat
-  update, reaches the phone with an over-the-air update. A field on a typed UniFFI record
-  in `sikemux-mobile` still needs a store build.
+- What the phone shows of a host crosses the bridge as the core's own JSON: chat events,
+  the device view and the host's info, read by TypeScript in `mobile/app/src/core`. A
+  field the core adds there reaches the phone with an over-the-air update. Only what the
+  native side acts on itself, such as a chat's place in its feed, stays a typed UniFFI
+  record, and a field on one of those still needs a store build.
+- A new request type in `sikemux-wire`, or a new bridge method, still needs a store build,
+  so neither is added for a feature: it becomes a method of `Call`. What still needs one is
+  something new the core pushes outside the chat events and the device view, a transport
+  change, or a native module the app adds.
 - The moves themselves changed the fingerprint once, so the release that carries them
   goes out as a store build.
 - `mobile/app/test/fingerprint.test.ts` pins the crates the phone counts, so a new

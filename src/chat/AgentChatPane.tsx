@@ -380,15 +380,10 @@ export function AgentChatPane({
                                         const index = firstRow + offset;
                                         const meta = rowMeta(displayState.messages, index);
                                         const fold = folds.get(index);
-                                        const workId = fold ? displayState.messages[fold.start].id : "";
+                                        const workId = fold ? fold.id : "";
                                         const folded = fold !== undefined && findRequest === 0 && !openWork.has(workId);
                                         const summary = fold && index === Math.max(fold.start, firstRow) && (
-                                            <WorkSummary
-                                                took={rowMeta(displayState.messages, fold.end).took}
-                                                calls={fold.calls}
-                                                open={!folded}
-                                                onToggle={() => toggleWork(workId)}
-                                            />
+                                            <WorkSummary took={fold.took} calls={fold.calls} open={!folded} onToggle={() => toggleWork(workId)} />
                                         );
                                         if (fold && folded && index < fold.end)
                                             return (

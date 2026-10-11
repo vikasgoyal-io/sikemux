@@ -344,6 +344,14 @@ pub enum Request {
         mime: String,
         data: String,
     },
+    /// A request by name, its `params` and answer as JSON. The core alone
+    /// knows each method, so a device gains one without its native code
+    /// changing. A method is never removed or renamed once released.
+    Call {
+        method: String,
+        #[serde(default)]
+        params: Value,
+    },
     AcpCancel {
         agent_id: String,
     },
@@ -686,6 +694,9 @@ pub struct ChatInfo {
     /// Subagents still running for it.
     #[serde(default)]
     pub subagents: u32,
+    /// Background shells and monitors still running for it.
+    #[serde(default)]
+    pub tasks: u32,
     /// The paired device that started it. The app started the rest.
     pub started_by: Option<String>,
     /// The app's launcher a device started it with.
@@ -918,6 +929,9 @@ pub enum Response {
     },
     Attached {
         path: PathBuf,
+    },
+    Called {
+        result: Value,
     },
 }
 

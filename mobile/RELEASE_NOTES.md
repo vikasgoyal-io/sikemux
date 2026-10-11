@@ -1,7 +1,7 @@
-# 0.1.0-nightly.11
+# 0.1.0-nightly.13
 
-• A finished answer folds its work above the reply, so the answer reads first.
-• A reloaded chat keeps the real time of every turn.
-• Tapping an iPhone notification opens its chat.
-• Try again clears a damaged list of paired hosts.
-• From this build on, more fixes reach your phone without a new app version.
+• Pictures pasted on your computer show in the chat as thumbnails, and open full screen on a tap.
+• Agents that left shells or monitors running are marked.
+• A chat shows its project with the rail's folder.
+• The jump-to-latest arrow hides once a chat reaches its end.
+• From this build on, new phone features can arrive without a new app version.

@@ -15,6 +15,7 @@ use crate::protocol::{
 };
 
 use super::access::{self, Needs, Peer};
+use super::calls;
 use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
@@ -740,6 +741,12 @@ async fn run_requests(
                     }
                     Err(error) => client.respond(request_id, Err(error)),
                 }
+            }
+            Request::Call { method, params } => {
+                tokio::spawn(async move {
+                    let result = calls::call(core, &method, params).await;
+                    client.respond(request_id, result.map(|result| Response::Called { result }));
+                });
             }
             Request::AcpCancel { agent_id } => {
                 let result = chat::cancel(&core, &agent_id);
